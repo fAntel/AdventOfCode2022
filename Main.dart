@@ -1,12 +1,15 @@
 import 'dart:io';
-import 'dart:math';
+
+import 'package:collection/collection.dart';
 
 void main() {
   final input = File("input");
   final maxCalories = input.readAsLinesSync()
       .fold([<int>[]], splitBags)
       .map((e) => e.reduce((value, element) => value + element))
-      .reduce((value, element) => max(value, element));
+      .sorted((a, b) => a.compareTo(b) * -1)
+      .take(3)
+      .sum;
   print(maxCalories);
 }
 
