@@ -4,79 +4,72 @@ void main() {
   final input = File("input");
   final maxCalories = input.readAsLinesSync()
       .map((e) => Round(e))
-      .fold(0, (acc, round) => acc + round.score());
+      .fold(0, (int acc, Round round) => acc + round.score());
   print(maxCalories);
 }
 
-abstract class Shape extends Comparable<Shape> {
-  int get score;
+enum Shape {
+  rock(score: 1), paper(score: 2), scissors(score: 3);
 
-  factory Shape.fromInt(int shapeType) {
-    switch (shapeType) {
-      case 0: return Rock();
-      case 1: return Paper();
-      case 2: return Scissors();
-      default: throw ArgumentError("unknown shape type: $shapeType");
+  const Shape({
+    required this.score,
+  });
+
+  final int score;
+
+  factory Shape.otherShape(String char) {
+    switch (char) {
+      case 'A': return rock;
+      case 'B': return paper;
+      case 'C': return scissors;
+      default: throw ArgumentError("unknown shape type: $char");
     }
-  }
-}
-
-class Rock implements Shape {
-  @override
-  int get score => 1;
-
-  @override
-  int compareTo(Shape other) {
-    if (other is Scissors) return 1;
-    if (other is Paper) return -1;
-    if (other is Rock) return 0;
-    throw ArgumentError("Unknown class ${other.runtimeType.toString()}");
-  }
-}
-
-class Paper implements Shape {
-  @override
-  int get score => 2;
-
-  @override
-  int compareTo(Shape other) {
-    if (other is Rock) return 1;
-    if (other is Scissors) return -1;
-    if (other is Paper) return 0;
-    throw ArgumentError("Unknown class ${other.runtimeType.toString()}");
-  }
-}
-
-class Scissors implements Shape {
-  @override
-  int get score => 3;
-
-  @override
-  int compareTo(Shape other) {
-    if (other is Paper) return 1;
-    if (other is Rock) return -1;
-    if (other is Scissors) return 0;
-    throw ArgumentError("Unknown class ${other.runtimeType.toString()}");
   }
 }
 
 class Round {
-  Shape _otherShape;
-  Shape _myShape;
+  late Shape _otherShape;
+  late Shape _myShape;
 
   Round(String roundData) {
-    _otherShape = Shape.fromInt(roundData.codeUnitAt(0) - "A".codeUnitAt(0));
-    _myShape = Shape.fromInt(roundData.codeUnitAt(2) - "X".codeUnitAt(0));
+    _otherShape = Shape.otherShape(roundData[0]);
+    _myShape = _guessMyShape(roundData[2]);
   }
 
   int score() {
     var result = _myShape.score;
-    final compareResult = _myShape.compareTo(_otherShape);
-    if (compareResult == 0) {
+    if (_myShape == _otherShape) {
       result += 3;
-    } else if (compareResult > 0) {
+    } else if (_isWin(_myShape, _otherShape)) {
       result += 6;
     }
     return result;
+  }
+
+  Shape _guessMyShape(String roundResult) {
+    switch (roundResult) {
+      case 'X':
+        return Shape.values.firstWhere((element) {
+          return element != _otherShape && !_isWin(element, _otherShape);
+        });
+      case 'Y':
+        return Shape.values.firstWhere((element) => element == _otherShape);
+      case 'Z':
+        return Shape.values.firstWhere((element) {
+          return element != _otherShape && _isWin(element, _otherShape);
+        });
+      default: throw ArgumentError("unknown round result $roundResult");
+    }
+  }
+
+  bool _isWin(Shape a, Shape b) {
+    switch (a) {
+      case Shape.rock:
+        return b == Shape.scissors;
+      case Shape.paper:
+        return b == Shape.rock;
+      case Shape.scissors:
+        return b == Shape.paper;
+    }
   }
 }
