@@ -6,9 +6,15 @@ void main() {
   final input = File("input");
   final priorities = input
       .readAsLinesSync()
-      .map((e) => Pair(e.substring(0, e.length ~/ 2), e.substring(e.length ~/ 2)))
-      .map((e) => Pair(e.first.toSet(), e.second.toSet()))
-      .map((e) => e.first.intersection(e.second))
+      .slices(3)
+      .map((groupRucksacks) => groupRucksacks.map((rucksack) => rucksack.toSet()))
+      .map((groupRucksacks) {
+        var result = groupRucksacks.first;
+        groupRucksacks.skip(1).forEach((rucksack) {
+          result = result.intersection(rucksack);
+        });
+        return result;
+      })
       .map((e) => e.single.codeUnitAt(0))
       .map((e) {
         if ("a".codeUnitAt(0) <= e && e <= "z".codeUnitAt(0)) {
@@ -19,29 +25,6 @@ void main() {
       })
       .sum;
   print(priorities);
-}
-
-class Pair<T> {
-  final T first;
-  final T second;
-
-  Pair(T this.first, T this.second);
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is Pair &&
-          runtimeType == other.runtimeType &&
-          first == other.first &&
-          second == other.second;
-
-  @override
-  int get hashCode => first.hashCode ^ second.hashCode;
-
-  @override
-  String toString() {
-    return 'Pair{first: $first, second: $second}';
-  }
 }
 
 extension StringExtenstions on String {
