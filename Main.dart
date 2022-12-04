@@ -1,75 +1,55 @@
 import 'dart:io';
 
+import 'package:collection/collection.dart';
+
 void main() {
   final input = File("input");
-  final maxCalories = input.readAsLinesSync()
-      .map((e) => Round(e))
-      .fold(0, (int acc, Round round) => acc + round.score());
-  print(maxCalories);
+  final priorities = input
+      .readAsLinesSync()
+      .map((e) => Pair(e.substring(0, e.length ~/ 2), e.substring(e.length ~/ 2)))
+      .map((e) => Pair(e.first.toSet(), e.second.toSet()))
+      .map((e) => e.first.intersection(e.second))
+      .map((e) => e.single.codeUnitAt(0))
+      .map((e) {
+        if ("a".codeUnitAt(0) <= e && e <= "z".codeUnitAt(0)) {
+          return e - "a".codeUnitAt(0) + 1;
+        } else {
+          return 27 + e - "A".codeUnitAt(0);
+        }
+      })
+      .sum;
+  print(priorities);
 }
 
-enum Shape {
-  rock(score: 1), paper(score: 2), scissors(score: 3);
+class Pair<T> {
+  final T first;
+  final T second;
 
-  const Shape({
-    required this.score,
-  });
+  Pair(T this.first, T this.second);
 
-  final int score;
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is Pair &&
+          runtimeType == other.runtimeType &&
+          first == other.first &&
+          second == other.second;
 
-  factory Shape.otherShape(String char) {
-    switch (char) {
-      case 'A': return rock;
-      case 'B': return paper;
-      case 'C': return scissors;
-      default: throw ArgumentError("unknown shape type: $char");
-    }
+  @override
+  int get hashCode => first.hashCode ^ second.hashCode;
+
+  @override
+  String toString() {
+    return 'Pair{first: $first, second: $second}';
   }
 }
 
-class Round {
-  late Shape _otherShape;
-  late Shape _myShape;
-
-  Round(String roundData) {
-    _otherShape = Shape.otherShape(roundData[0]);
-    _myShape = _guessMyShape(roundData[2]);
-  }
-
-  int score() {
-    var result = _myShape.score;
-    if (_myShape == _otherShape) {
-      result += 3;
-    } else if (_isWin(_myShape, _otherShape)) {
-      result += 6;
+extension StringExtenstions on String {
+  Set<String> toSet() {
+    final result = <String>{};
+    for (var i = 0; i < length; ++i) {
+      result.add(this[i]);
     }
     return result;
-  }
-
-  Shape _guessMyShape(String roundResult) {
-    switch (roundResult) {
-      case 'X':
-        return Shape.values.firstWhere((element) {
-          return element != _otherShape && !_isWin(element, _otherShape);
-        });
-      case 'Y':
-        return Shape.values.firstWhere((element) => element == _otherShape);
-      case 'Z':
-        return Shape.values.firstWhere((element) {
-          return element != _otherShape && _isWin(element, _otherShape);
-        });
-      default: throw ArgumentError("unknown round result $roundResult");
-    }
-  }
-
-  bool _isWin(Shape a, Shape b) {
-    switch (a) {
-      case Shape.rock:
-        return b == Shape.scissors;
-      case Shape.paper:
-        return b == Shape.rock;
-      case Shape.scissors:
-        return b == Shape.paper;
-    }
   }
 }
