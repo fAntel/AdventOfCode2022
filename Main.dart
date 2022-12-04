@@ -5,20 +5,15 @@ void main() {
   final fullyContainedSum = input
       .readAsLinesSync()
       .map((groupAssignments) {
-        final ranges = groupAssignments.split(",")
-            .map((assignment) => assignment.trim());
+        final ranges =
+            groupAssignments.split(",").map((assignment) => assignment.trim());
         return Pair(ranges.first, ranges.last);
       })
-      .map((groupAssignments) =>
-        Pair(
+      .map((groupAssignments) => Pair(
           IntRange.fromStringPeriod(groupAssignments.first),
-          IntRange.fromStringPeriod(groupAssignments.second)
-        )
-      )
+          IntRange.fromStringPeriod(groupAssignments.second)))
       .where((groupRanges) =>
-          groupRanges.first.isFullyContains(groupRanges.second) ||
-          groupRanges.second.isFullyContains(groupRanges.first)
-      )
+          IntRange.isOverlap(groupRanges.first, groupRanges.second))
       .length;
   print(fullyContainedSum);
 }
@@ -32,10 +27,10 @@ class Pair<T> {
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-          other is Pair &&
-              runtimeType == other.runtimeType &&
-              first == other.first &&
-              second == other.second;
+      other is Pair &&
+          runtimeType == other.runtimeType &&
+          first == other.first &&
+          second == other.second;
 
   @override
   int get hashCode => first.hashCode ^ second.hashCode;
@@ -61,6 +56,13 @@ class IntRange {
 
   bool isFullyContains(IntRange other) {
     return first <= other.first && other.last <= last;
+  }
+
+  static bool isOverlap(IntRange a, IntRange b) {
+    return (a.first <= b.first && b.first <= a.last) ||
+        (a.first <= b.last && b.last <= a.last) ||
+        (b.first <= a.first && a.first <= b.last) ||
+        (b.first <= a.first && a.first <= b.last);
   }
 
   @override
