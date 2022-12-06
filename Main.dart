@@ -97,10 +97,20 @@ class StacksOfCrates {
     assert(from >= 0 && from < _stacks.length);
     assert(to >= 0 && to < _stacks.length);
 
+    if (_stacks[from].isEmpty)
+      return;
+
     var i = 0;
+    final poppedCrates = List.empty(growable: true);
     while (i < count && !_stacks[from].isEmpty) {
-      _stacks[to].push(_stacks[from].pop());
+      poppedCrates.add(_stacks[from].pop());
       ++i;
+    }
+
+    if (poppedCrates.isNotEmpty) {
+      for (final crate in poppedCrates.reversed) {
+        _stacks[to].push(crate);
+      }
     }
   }
   
