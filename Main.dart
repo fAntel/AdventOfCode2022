@@ -1,9 +1,8 @@
 import 'dart:io';
 import 'dart:math';
 
-import 'package:collection/collection.dart';
-
-const MAX_SIZE_TO_DELETE = 100000;
+const FILESYSTEM_MAX_SIZE = 70000000;
+const UPDATE_SIZE = 30000000;
 
 void main() async {
   final input = File("input");
@@ -20,30 +19,36 @@ void main() async {
 
   printDirectoryRecursive(filesystem, 0);
 
-  final directoriesSizes = <int>[];
-  final totalSize = sumToDeleteDirectoriesSizes(filesystem, directoriesSizes);
+  final directoriesSizes = <Node, int>{};
+  final totalSize = calculateDirectoriesSizes(filesystem, directoriesSizes);
 
-  final result = directoriesSizes.sum;
-  print("Total size is $totalSize");
-  print(result);
+  final needToFree = UPDATE_SIZE - (FILESYSTEM_MAX_SIZE - totalSize);
+  int result = UPDATE_SIZE;
+  Node? directoryToDelete = null;
+  for (final entry in directoriesSizes.entries) {
+    if (entry.value >= needToFree && entry.value < result) {
+      result = entry.value;
+      directoryToDelete = entry.key;
+    }
+  }
+
+  print("Total size is $totalSize, need to free $needToFree");
+  print('Remove directory "${directoryToDelete?.name ?? "<unknown>"} with size $result');
 }
 
-int sumToDeleteDirectoriesSizes(DirectoryInfo directory,
-    List<int> directoriesSizes) {
+int calculateDirectoriesSizes(
+    DirectoryInfo directory, Map<Node, int> directoriesSizes) {
   var sum = 0;
 
   for (final child in directory.children) {
     if (child is DirectoryInfo) {
-      sum += sumToDeleteDirectoriesSizes(child, directoriesSizes);
+      sum += calculateDirectoriesSizes(child, directoriesSizes);
     } else if (child is FileInfo) {
       sum += child.size;
     }
   }
 
-  if (sum <= MAX_SIZE_TO_DELETE) {
-    directoriesSizes.add(sum);
-  }
-
+  directoriesSizes[directory] = sum;
   return sum;
 }
 
@@ -79,6 +84,17 @@ abstract class Node {
       return FileInfo.fromInput(currentDirectory, inputLine);
     }
   }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is Node &&
+          runtimeType == other.runtimeType &&
+          name == other.name &&
+          parent == other.parent;
+
+  @override
+  int get hashCode => name.hashCode ^ parent.hashCode;
 }
 
 class FileInfo extends Node {
@@ -103,6 +119,18 @@ class FileInfo extends Node {
   }
 
   @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is FileInfo &&
+          runtimeType == other.runtimeType &&
+          size == other.size &&
+          name == other.name &&
+          parent == other.parent;
+
+  @override
+  int get hashCode => size.hashCode ^ name.hashCode ^ parent.hashCode;
+
+  @override
   String toString() {
     return 'FileInfo{name: $name, size: $size}';
   }
@@ -123,6 +151,16 @@ class DirectoryInfo extends Node {
   static bool isDirectory(String input) {
     return input.startsWith(_DIRECTORY_PREFIX);
   }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      super == other &&
+          other is DirectoryInfo &&
+          runtimeType == other.runtimeType;
+
+  @override
+  int get hashCode => super.hashCode;
 
   @override
   String toString() {
@@ -199,4 +237,10 @@ class Cd extends Command {
                 'Cannot find directory "$args" in current directory: $currentDirectory'));
     }
   }
+}
+
+class Container<T> {
+  T value;
+  
+  Container(this.value);
 }
