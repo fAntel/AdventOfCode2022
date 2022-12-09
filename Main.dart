@@ -1,89 +1,72 @@
 import 'dart:io';
+import 'dart:math';
 
 void main() {
   final input = File("input");
-  final inputLines = input.readAsLinesSync();
-  final gridWidth = inputLines.first.length;
-  final gridHeight = inputLines.length;
-  final grid = List<List<Tree>>.generate(gridHeight, (row) {
-    return List<Tree>.generate(
-        gridWidth, (column) {
-          final result = Tree(int.parse(inputLines[row][column]));
-          result.topVisible = row == 0;
-          result.leftVisible = column == 0;
-          return result;
-    },
-        growable: false);
-  },
-      growable: false);
+  final motions = input.readAsLinesSync().map((e) => Motion.fromInputLine(e));
 
-  int k;
-  Tree currentTree;
-  for (int i = 1; i + 1 < gridHeight; ++i) {
-    for (int j = 1; j + 1 < gridWidth; ++j) {
-      currentTree = grid[i][j];
+  var headPosition = Point(0, 0);
+  var tailPosition = Point(0, 0);
+  final tailPositions = {tailPosition};
 
-      k = j - 1;
-      while (k >= 0 && !currentTree.isHiddenBy(grid[i][k]) && !grid[i][k].leftVisible)
-        --k;
-      currentTree.leftVisible = k >= 0 && !currentTree.isHiddenBy(grid[i][k]);
-      if (currentTree.isVisible)
-        continue;
-
-      k = i - 1;
-      while (k >= 0 && !currentTree.isHiddenBy(grid[k][j]) && !grid[k][j].topVisible)
-        --k;
-      currentTree.topVisible = k >= 0 && !currentTree.isHiddenBy(grid[k][j]);
-      if (currentTree.isVisible)
-        continue;
-
-      k = j + 1;
-      while (k < gridWidth && !currentTree.isHiddenBy(grid[i][k]))
-        ++k;
-      currentTree.rightVisible = k >= gridWidth;
-      if (currentTree.isVisible)
-        continue;
-
-      k = i + 1;
-      while (k < gridHeight && !currentTree.isHiddenBy(grid[k][j])) ++k;
-      currentTree.bottomVisible = k >= gridHeight;
-    }
-  }
-
-  for (int i = 0; i < gridHeight; ++i) {
-    print(grid[i].join("\t"));
-  }
-
-  var visibleTreesCount = gridHeight * 2 + (gridWidth - 2) * 2;
-  for (int i = 1; i + 1 < gridHeight; ++i) {
-    for (int j = 1; j + 1 < gridWidth; ++j) {
-      if (grid[i][j].isVisible) {
-        visibleTreesCount += 1;
+  for (final motion in motions) {
+    for (int i = 0; i < motion.count; ++i) {
+      switch (motion.direction) {
+        case Direction.left:
+          headPosition = Point(headPosition.x - 1, headPosition.y);
+          break;
+        case Direction.up:
+          headPosition = Point(headPosition.x, headPosition.y - 1);
+          break;
+        case Direction.right:
+          headPosition = Point(headPosition.x + 1, headPosition.y);
+          break;
+        case Direction.down:
+          headPosition = Point(headPosition.x, headPosition.y + 1);
+          break;
       }
+
+      if (!tailPosition.isTouching(headPosition)) {
+        tailPosition = Point(
+            tailPosition.x + (headPosition.x - tailPosition.x).sign,
+            tailPosition.y + (headPosition.y - tailPosition.y).sign);
+      }
+
+      tailPositions.add(tailPosition);
     }
   }
 
-  print("Visible trees count: $visibleTreesCount");
+  print(tailPositions.length);
 }
 
-class Tree {
-  final int height;
-
-  var topVisible = false;
-  var bottomVisible = false;
-  var leftVisible = false;
-  var rightVisible = false;
-
-  get isVisible => topVisible || bottomVisible || leftVisible || rightVisible;
-
-  Tree(this.height);
-
-  bool isHiddenBy(Tree other) {
-    return other.height >= height;
+extension PointExtenstions on Point {
+  bool isTouching(Point other) {
+    return (x - other.x).abs() <= 1 && (y - other.y).abs() <= 1;
   }
+}
 
-  @override
-  String toString() {
-    return 'Tree{height: $height, isVisible: $isVisible}';
+class Motion {
+  final Direction direction;
+  final int count;
+
+  Motion(this.direction, this.count) : assert(count >= 0);
+
+  Motion.fromInputLine(String input) :
+      direction = Direction.fromInput(input),
+      count = int.parse(input.substring(2));
+}
+
+enum Direction {
+  left, up, right, down;
+
+  factory Direction.fromInput(String input) {
+    var directionPart = input.substring(0, 1);
+    switch (directionPart) {
+      case "L": return Direction.left;
+      case "U": return Direction.up;
+      case "R": return Direction.right;
+      case "D": return Direction.down;
+      default: throw ArgumentError("Unknown direction: $directionPart. Full input: $input");
+    }
   }
 }
