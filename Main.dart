@@ -7,38 +7,46 @@ void main() {
   final gridHeight = inputLines.length;
   final grid = List<List<Tree>>.generate(gridHeight, (row) {
     return List<Tree>.generate(
-        gridWidth, (column) => Tree(int.parse(inputLines[row][column])),
+        gridWidth, (column) {
+          final result = Tree(int.parse(inputLines[row][column]));
+          result.topVisible = row == 0;
+          result.leftVisible = column == 0;
+          return result;
+    },
         growable: false);
   },
       growable: false);
 
   int k;
   Tree currentTree;
-  for (int i = 0; i < gridHeight; ++i) {
-    for (int j = 0; j < gridWidth; ++j) {
+  for (int i = 1; i + 1 < gridHeight; ++i) {
+    for (int j = 1; j + 1 < gridWidth; ++j) {
       currentTree = grid[i][j];
 
       k = j - 1;
-      while (k >= 0 && !currentTree.isHiddenBy(grid[i][k])) --k;
-      currentTree.leftVisible = k < 0;
-      currentTree.leftViewingDistance = currentTree.leftVisible ? j : j - k;
-
-      k = j + 1;
-      while (k < gridWidth && !currentTree.isHiddenBy(grid[i][k])) ++k;
-      currentTree.rightVisible = k >= gridWidth;
-      currentTree.rightViewingDistance =
-          currentTree.rightVisible ? gridWidth - j - 1 : k - j;
+      while (k >= 0 && !currentTree.isHiddenBy(grid[i][k]) && !grid[i][k].leftVisible)
+        --k;
+      currentTree.leftVisible = k >= 0 && !currentTree.isHiddenBy(grid[i][k]);
+      if (currentTree.isVisible)
+        continue;
 
       k = i - 1;
-      while (k >= 0 && !currentTree.isHiddenBy(grid[k][j])) --k;
-      currentTree.topVisible = k < 0;
-      currentTree.topViewingDistance = currentTree.topVisible ? i : i - k;
+      while (k >= 0 && !currentTree.isHiddenBy(grid[k][j]) && !grid[k][j].topVisible)
+        --k;
+      currentTree.topVisible = k >= 0 && !currentTree.isHiddenBy(grid[k][j]);
+      if (currentTree.isVisible)
+        continue;
+
+      k = j + 1;
+      while (k < gridWidth && !currentTree.isHiddenBy(grid[i][k]))
+        ++k;
+      currentTree.rightVisible = k >= gridWidth;
+      if (currentTree.isVisible)
+        continue;
 
       k = i + 1;
       while (k < gridHeight && !currentTree.isHiddenBy(grid[k][j])) ++k;
       currentTree.bottomVisible = k >= gridHeight;
-      currentTree.bottomViewingDistance =
-          currentTree.bottomVisible ? gridHeight - i - 1 : k - i;
     }
   }
 
@@ -46,20 +54,16 @@ void main() {
     print(grid[i].join("\t"));
   }
 
-  var visibleTreesCount = 0;
-  var maxScenicScore = 0;
-  for (int i = 0; i < gridHeight; ++i) {
-    for (int j = 0; j < gridWidth; ++j) {
+  var visibleTreesCount = gridHeight * 2 + (gridWidth - 2) * 2;
+  for (int i = 1; i + 1 < gridHeight; ++i) {
+    for (int j = 1; j + 1 < gridWidth; ++j) {
       if (grid[i][j].isVisible) {
         visibleTreesCount += 1;
-      }
-      if (grid[i][j].scenicScore > maxScenicScore) {
-        maxScenicScore = grid[i][j].scenicScore;
       }
     }
   }
 
-  print("Visible trees count: $visibleTreesCount, max scenic score: $maxScenicScore");
+  print("Visible trees count: $visibleTreesCount");
 }
 
 class Tree {
@@ -70,18 +74,7 @@ class Tree {
   var leftVisible = false;
   var rightVisible = false;
 
-  var topViewingDistance = 0;
-  var bottomViewingDistance = 0;
-  var leftViewingDistance = 0;
-  var rightViewingDistance = 0;
-
   get isVisible => topVisible || bottomVisible || leftVisible || rightVisible;
-
-  get scenicScore =>
-      topViewingDistance *
-      bottomViewingDistance *
-      leftViewingDistance *
-      rightViewingDistance;
 
   Tree(this.height);
 
@@ -91,6 +84,6 @@ class Tree {
 
   @override
   String toString() {
-    return 'Tree{height: $height, isVisible: $isVisible, scenic score: $scenicScore}';
+    return 'Tree{height: $height, isVisible: $isVisible}';
   }
 }
