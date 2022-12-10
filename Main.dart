@@ -1,82 +1,65 @@
 import 'dart:io';
-import 'dart:math';
 
 void main() {
   final input = File("input");
-  final motions = input.readAsLinesSync().map((e) => Motion.fromInputLine(e));
-  final knots = List<Point<int>>.generate(10, (index) => Point<int>(0, 0));
-  final tailPositions = {knots.last};
+  final commands =
+      input.readAsLinesSync().map((e) => Command.fromInputLine(e)).toList();
+  final importantCycles =
+      List.generate(6, (index) => index == 0 ? 20 : 20 + index * 40);
 
-  for (final motion in motions) {
-    for (int i = 0; i < motion.count; ++i) {
-      switch (motion.direction) {
-        case Direction.left:
-          knots[0] = Point(knots.first.x - 1, knots.first.y);
-          break;
-        case Direction.up:
-          knots[0] = Point(knots.first.x, knots.first.y - 1);
-          break;
-        case Direction.right:
-          knots[0] = Point(knots.first.x + 1, knots.first.y);
-          break;
-        case Direction.down:
-          knots[0] = Point(knots.first.x, knots.first.y + 1);
-          break;
-      }
-
-      knots.pullWholeTail();
-
-      tailPositions.add(knots.last);
+  var result = 0;
+  var cp = 0;
+  var x = 1;
+  var currentCycle = 0;
+  for (final nextCycle in importantCycles) {
+    while (cp < commands.length && currentCycle + commands[cp].duration < nextCycle) {
+      x = commands[cp].run(x);
+      currentCycle += commands[cp].duration;
+      ++cp;
     }
+    result += nextCycle * x;
   }
 
-  print(tailPositions.length);
+  print(result);
 }
 
-class Motion {
-  final Direction direction;
-  final int count;
+abstract class Command {
+  final int duration;
 
-  Motion(this.direction, this.count) : assert(count >= 0);
+  Command(this.duration);
 
-  Motion.fromInputLine(String input) :
-        direction = Direction.fromInput(input),
-        count = int.parse(input.substring(2));
-}
+  int run(int currentX);
 
-enum Direction {
-  left, up, right, down;
-
-  factory Direction.fromInput(String input) {
-    var directionPart = input.substring(0, 1);
-    switch (directionPart) {
-      case "L": return Direction.left;
-      case "U": return Direction.up;
-      case "R": return Direction.right;
-      case "D": return Direction.down;
-      default: throw ArgumentError("Unknown direction: $directionPart. Full input: $input");
+  factory Command.fromInputLine(String inputLine) {
+    final parts = inputLine.split(" ");
+    switch (parts.first) {
+      case Noop.NAME: return Noop();
+      case AddX.NAME: return AddX(int.parse(parts[1]));
+      default: throw ArgumentError("Unknown command ${parts.first}. Full input: $inputLine");
     }
   }
 }
 
-extension PointExtenstions on Point<int> {
-  bool isTouching(Point<int> other) {
-    return (x - other.x).abs() <= 1 && (y - other.y).abs() <= 1;
-  }
+class Noop extends Command {
+  static const NAME = "noop";
 
-  Point<int> pull(Point<int> other) {
-    return Point(
-        other.x + (x - other.x).sign,
-        other.y + (y - other.y).sign);
+  Noop() : super(1);
+
+  @override
+  int run(int currentX) {
+    return currentX;
   }
 }
 
-extension KnotsExtentions on List<Point<int>> {
-  void pullWholeTail() {
-    for (int i = 1; i < length; ++i) {
-      if (!this[i].isTouching(this[i - 1])) {
-        this[i] = this[i - 1].pull(this[i]);
-      }
-    }
+class AddX extends Command {
+  static const NAME = "addx";
+
+  final int value;
+
+  AddX(this.value) : super(2);
+
+  @override
+  int run(int currentX) {
+    return currentX + value;
   }
 }
