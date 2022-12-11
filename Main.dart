@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:collection/collection.dart';
 
-const ROUNDS_COUNT = 20;
+const ROUNDS_COUNT = 10000;
 
 void main() {
   final input = File("input");
@@ -11,6 +11,14 @@ void main() {
       .where((list) => list.isNotEmpty)
       .map((e) => Monkey.fromInput(e))
       .toList();
+
+  final divider = monkeys.fold(1, (int acc, monkey) => acc * monkey.divisibleBy);
+  final worryReducer = PartTwoWorryReducer(divider);
+  for (final Monkey monkey in monkeys)   {
+    for (final Item item in monkey.items) {
+      item.worryReducer = worryReducer;
+    }
+  }
 
   MonkeyInspectionResult inspectionResult;
   for (int i = 0; i < ROUNDS_COUNT; ++i) {
@@ -24,20 +32,23 @@ void main() {
   }
 
   final int monkeyBusiness = monkeys
-      .sorted((a, b) => a.itemsInspected.compareTo(b.itemsInspected))
-      .skip(monkeys.length - 2)
       .map((monkey) => monkey.itemsInspected)
+      .sorted((a, b) => a.compareTo(b))
+      .skip(monkeys.length - 2)
       .fold(1, (int acc, int itemsInspected) => acc * itemsInspected);
   print(monkeyBusiness);
 }
 
 class Item {
   int worryLevel;
+  late WorryReducer worryReducer;
 
   Item(this.worryLevel);
 
-  void applyInspection(int worryRaiseFun(int worryLevel)) {
-    worryLevel = worryRaiseFun(worryLevel) ~/ 3;
+  Item.fromInput(String input) : worryLevel = int.parse(input.trim());
+
+  void applyInspection(Operation operation) {
+    worryLevel = worryReducer.reduceWorry(operation.apply(worryLevel));
   }
 
   @override
@@ -52,22 +63,23 @@ class Monkey {
   static const FALSE_TEST_RESULT_LINE = "If false:";
 
   final List<Item> _items;
-  Operation _worryLevelChangeOperation;
-  int _divisibleBy;
-  int _trueMonkeyIndex;
-  int _falseMonkeyIndex;
+  final Operation _worryLevelChangeOperation;
+  final int divisibleBy;
+  final int _trueMonkeyIndex;
+  final int _falseMonkeyIndex;
   int _itemsInspected = 0;
 
   bool get hasItemsToInspect => _items.isNotEmpty;
   int get itemsInspected => _itemsInspected;
+  List<Item> get items => List.unmodifiable(_items);
 
-  Monkey(this._items, this._worryLevelChangeOperation, this._divisibleBy,
+  Monkey(this._items, this._worryLevelChangeOperation, this.divisibleBy,
       this._trueMonkeyIndex, this._falseMonkeyIndex);
 
   MonkeyInspectionResult inspectNextItem() {
     final item = _items.removeAt(0);
-    item.applyInspection(_worryLevelChangeOperation.apply);
-    int otherMonkeyIndex = item.worryLevel % _divisibleBy == 0
+    item.applyInspection(_worryLevelChangeOperation);
+    int otherMonkeyIndex = item.worryLevel % divisibleBy == 0
         ? _trueMonkeyIndex
         : _falseMonkeyIndex;
     _itemsInspected += 1;
@@ -78,10 +90,9 @@ class Monkey {
     _items.add(item);
   }
 
-
   @override
   String toString() {
-    return 'Monkey{_items: ${_items.join(", ")}, _worryLevelChangeOperation: $_worryLevelChangeOperation, _divisibleBy: $_divisibleBy, _trueMonkeyIndex: $_trueMonkeyIndex, _falseMonkeyIndex: $_falseMonkeyIndex}';
+    return 'Monkey{_items: ${_items.join(", ")}, _worryLevelChangeOperation: $_worryLevelChangeOperation, _divisibleBy: $divisibleBy, _trueMonkeyIndex: $_trueMonkeyIndex, _falseMonkeyIndex: $_falseMonkeyIndex}';
   }
 
   factory Monkey.fromInput(List<String> inputLines) {
@@ -98,7 +109,7 @@ class Monkey {
         inputLine
             .substring(ITEMS_LIST_LINE.length)
             .split(",")
-            .forEach((element) => items.add(Item(int.parse(element.trim()))));
+            .forEach((element) => items.add(Item.fromInput(element)));
       } else if (inputLine.startsWith(OPERATION_LINE)) {
         worryLevelChangeOperation = Operation.fromInputLine(inputLine);
       } else if (inputLine.startsWith(TEST_LINE)) {
@@ -183,6 +194,28 @@ class Double extends Operation {
 
   @override
   String toString() => 'Double{}';
+}
+
+abstract class WorryReducer {
+  WorryReducer();
+  
+  int reduceWorry(int worryLevel);
+}
+
+class PartOneWorryReducer extends WorryReducer {
+  PartOneWorryReducer();
+
+  @override
+  int reduceWorry(int worryLevel) => worryLevel ~/ 3;
+}
+
+class PartTwoWorryReducer extends WorryReducer {
+  final int _divider;
+
+  PartTwoWorryReducer(this._divider);
+
+  @override
+  int reduceWorry(int worryLevel) => worryLevel % _divider;
 }
 
 class MonkeyInspectionResult {
