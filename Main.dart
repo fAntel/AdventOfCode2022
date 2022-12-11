@@ -12,8 +12,7 @@ void main() {
       .map((e) => Monkey.fromInput(e))
       .toList();
 
-  final divider = monkeys.fold(1, (int acc, monkey) => acc * monkey.divisibleBy);
-  final worryReducer = PartTwoWorryReducer(divider);
+  final worryReducer = BigIntWorryReducer();
   for (final Monkey monkey in monkeys)   {
     for (final Item item in monkey.items) {
       item.worryReducer = worryReducer;
@@ -40,12 +39,12 @@ void main() {
 }
 
 class Item {
-  int worryLevel;
+  BigInt worryLevel;
   late WorryReducer worryReducer;
 
   Item(this.worryLevel);
 
-  Item.fromInput(String input) : worryLevel = int.parse(input.trim());
+  Item.fromInput(String input) : worryLevel = BigInt.parse(input.trim());
 
   void applyInspection(Operation operation) {
     worryLevel = worryReducer.reduceWorry(operation.apply(worryLevel));
@@ -64,7 +63,7 @@ class Monkey {
 
   final List<Item> _items;
   final Operation _worryLevelChangeOperation;
-  final int divisibleBy;
+  final BigInt divisibleBy;
   final int _trueMonkeyIndex;
   final int _falseMonkeyIndex;
   int _itemsInspected = 0;
@@ -73,13 +72,14 @@ class Monkey {
   int get itemsInspected => _itemsInspected;
   List<Item> get items => List.unmodifiable(_items);
 
-  Monkey(this._items, this._worryLevelChangeOperation, this.divisibleBy,
-      this._trueMonkeyIndex, this._falseMonkeyIndex);
+  Monkey(this._items, this._worryLevelChangeOperation, int divisibleBy,
+      this._trueMonkeyIndex, this._falseMonkeyIndex)
+      : this.divisibleBy = BigInt.from(divisibleBy);
 
   MonkeyInspectionResult inspectNextItem() {
     final item = _items.removeAt(0);
     item.applyInspection(_worryLevelChangeOperation);
-    int otherMonkeyIndex = item.worryLevel % divisibleBy == 0
+    int otherMonkeyIndex = item.worryLevel % divisibleBy == BigInt.zero
         ? _trueMonkeyIndex
         : _falseMonkeyIndex;
     _itemsInspected += 1;
@@ -141,7 +141,7 @@ abstract class Operation {
 
   Operation();
 
-  int apply(int oldValue);
+  BigInt apply(BigInt oldValue);
 
   factory Operation.fromInputLine(String inputLine) {
     final operationData = inputLine.split(" ");
@@ -149,12 +149,12 @@ abstract class Operation {
       throw ArgumentError("Cannot parse input, not enough data: $inputLine");
 
     if (operationData[operationData.length - 2] == ADD_INPUT_CHARACTER) {
-      return Add(int.parse(operationData.last));
+      return Add(BigInt.parse(operationData.last));
     } else if (operationData[operationData.length - 2] == MULTIPLY_AND_DOUBLE_INPUT_CHARACTER) {
       if (operationData.last.trim() == DOUBLE_VALUE) {
         return Double();
       } else {
-        return Multiply(int.parse(operationData.last));
+        return Multiply(BigInt.parse(operationData.last));
       }
     } else {
       throw ArgumentError("Unknown operation: $inputLine");
@@ -163,24 +163,24 @@ abstract class Operation {
 }
 
 class Add extends Operation {
-  final int _addValue;
+  final BigInt _addValue;
 
   Add(this._addValue);
 
   @override
-  int apply(int oldValue) => oldValue + _addValue;
+  BigInt apply(BigInt oldValue) => oldValue + _addValue;
 
   @override
   String toString() => 'Add{_addValue: $_addValue}';
 }
 
 class Multiply extends Operation {
-  final int _multiplyValue;
+  final BigInt _multiplyValue;
 
   Multiply(this._multiplyValue);
 
   @override
-  int apply(int oldValue) => oldValue * _multiplyValue;
+  BigInt apply(BigInt oldValue) => oldValue * _multiplyValue;
 
   @override
   String toString() => 'Multiply{_multiplyValue: $_multiplyValue}';
@@ -190,7 +190,7 @@ class Double extends Operation {
   Double();
 
   @override
-  int apply(int oldValue) => oldValue * oldValue;
+  BigInt apply(BigInt oldValue) => oldValue * oldValue;
 
   @override
   String toString() => 'Double{}';
@@ -198,24 +198,31 @@ class Double extends Operation {
 
 abstract class WorryReducer {
   WorryReducer();
-  
-  int reduceWorry(int worryLevel);
+
+  BigInt reduceWorry(BigInt worryLevel);
 }
 
 class PartOneWorryReducer extends WorryReducer {
+  final BigInt _divider = BigInt.from(3);
+
   PartOneWorryReducer();
 
   @override
-  int reduceWorry(int worryLevel) => worryLevel ~/ 3;
+  BigInt reduceWorry(BigInt worryLevel) => worryLevel ~/ _divider;
 }
 
 class PartTwoWorryReducer extends WorryReducer {
-  final int _divider;
+  final BigInt _divider;
 
   PartTwoWorryReducer(this._divider);
 
   @override
-  int reduceWorry(int worryLevel) => worryLevel % _divider;
+  BigInt reduceWorry(BigInt worryLevel) => worryLevel % _divider;
+}
+
+class BigIntWorryReducer extends WorryReducer {
+  @override
+  BigInt reduceWorry(BigInt worryLevel) => worryLevel;
 }
 
 class MonkeyInspectionResult {
