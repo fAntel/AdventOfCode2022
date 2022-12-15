@@ -1,161 +1,132 @@
 import 'dart:io';
+import 'dart:math';
 
 void main() {
   final input = File("input");
-  final firstDividerPacket = Packet([[2]]);
-  final secondDividerPacket = Packet([[6]]);
-  final packets = input.readAsLinesSync()
-      .where((line) => line.isNotEmpty)
-      .map((line) => Packet.fromInputLine(line))
-      .toList();
+  final game = Game();
+  input.readAsLinesSync().forEach((line) { game.buildMap(line); });
 
-  packets.addAll([firstDividerPacket, secondDividerPacket]);
-  packets.sort();
+  print(game.toMapVisualization());
+  game.runSimulation();
 
-  print((packets.indexOf(firstDividerPacket) + 1) *
-      (packets.indexOf(secondDividerPacket) + 1));
+  print(game.unitsOfSendCount);
 }
 
-class Pair<F, S> {
-  final F first;
-  final S second;
+enum Cell {
+  air, rock, send, source;
 
-  Pair(F this.first, S this.second);
+  bool get isBlocking => this != Cell.air && this != Cell.source;
 
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-          other is Pair &&
-              runtimeType == other.runtimeType &&
-              first == other.first &&
-              second == other.second;
-
-  @override
-  int get hashCode => first.hashCode ^ second.hashCode;
-
-  @override
-  String toString() => 'Pair{first: $first, second: $second}';
-}
-
-class Packet implements Comparable<Packet> {
-  final List<dynamic> data;
-
-  Packet(this.data);
-
-  factory Packet.fromInputLine(String inputLine) {
-    final parsedPacket = [];
-    _parseInput(inputLine, parsedPacket, 0);
-    return Packet(parsedPacket);
+  String toMapVisualization() {
+    switch (this) {
+      case Cell.air: return ".";
+      case Cell.rock: return "#";
+      case Cell.send: return "o";
+      case Cell.source: return "+";
+    }
   }
+}
 
-  static int _parseInput(final String input, final List<dynamic> result, int i) {
-    while (i < input.length) {
-      if (input[i] == '[') {
-        var list = [];
-        result.add(list);
-        i = _parseInput(input, list, i + 1);
-      } else if (input[i] == ']') {
-        return i + 1;
-      } else if (int.tryParse(input[i]) != null) {
-        int n = 0;
-        int j = 1;
-        int? parsed = null;
-        do {
-          parsed = int.tryParse(input[i]);
-          if (parsed != null) {
-            n = n * j + parsed;
-            j *= 10;
-            ++i;
+class Game {
+  var _startOffset = 500;
+  var _sourceOffset = 0;
+  final _map = [<Cell>[Cell.source]];
+  var _unitsOfSendCount = 0;
+
+  get unitsOfSendCount => _unitsOfSendCount;
+
+  void buildMap(String inputLine) {
+    inputLine
+        .split("->")
+        .map((scan) => scan.trim())
+        .map((scan) => scan.split(","))
+        .map((coords) => Point(int.parse(coords.first), int.parse(coords.last)))
+        .reduce((prevScan, scan) {
+          _adjustMapBounds(prevScan);
+          _adjustMapBounds(scan);
+
+          if (prevScan != scan) {
+            if (prevScan.x == scan.x) {
+              var from = min(prevScan.y, scan.y);
+              final to = max(prevScan.y, scan.y);
+              final x = scan.x - _startOffset;
+              while (from <= to) {
+                _map[from][x] = Cell.rock;
+                ++from;
+              }
+            } else { // prevScan.y == scan.y
+              var from = min(prevScan.x, scan.x) - _startOffset;
+              final to = max(prevScan.x, scan.x) - _startOffset;
+              while (from <= to) {
+                _map[scan.y][from] = Cell.rock;
+                ++from;
+              }
+            }
           }
-        } while (i < input.length && parsed != null);
-        result.add(n);
-      } else {
-        ++i;
+
+          return scan;        
+        });
+  }
+
+  void _adjustMapBounds(Point<int> scan) {
+    while (scan.x - _startOffset < 0) {
+      for (final List<Cell> row in _map) {
+        row.insert(0, Cell.air);
+      }
+      --_startOffset;
+      ++_sourceOffset;
+    }
+
+    while (scan.x - (_startOffset + _map.first.length - 1) > 0) {
+      for (final List<Cell> row in _map) {
+        row.add(Cell.air);
       }
     }
-    return i;
-  }
 
-  @override
-  String toString() {
-    final buf = StringBuffer("Packet{data: ");
-    prepareToString(buf, data);
-    buf.write("}");
-    return buf.toString();
-  }
-
-  void prepareToString(StringBuffer buf, List<dynamic> list) {
-    buf.write("[");
-    for (int i = 0; i < data.length; ++i) {
-      if (data[i] is int) {
-        buf.write(data[i].toString());
-      } else if (data[i] is List) {
-        prepareToString(buf, data[i]);
-      } else {
-        buf.write("${data[i]} (${data[i].runtimeType.toString()})");
-      }
-      if (i + 1 < data.length) {
-        buf.write(", ");
-      }
-    }
-    buf.write("]");
-  }
-
-  @override
-  int compareTo(Packet other) {
-    bool? result = _checkListOrder(this.data, other.data);
-    switch (result) {
-      case true: return -1;
-      case false: return 1;
-      default: return 0;
+    while (_map.length <= scan.y) {
+      _map.add(List.filled(_map.first.length, Cell.air, growable: true));
     }
   }
 
-  bool? _checkListOrder(List<dynamic> first, List<dynamic> second) {
-    int i = 0;
-    dynamic f, s;
-    bool? possibleResult;
-    while (i < first.length && i < second.length) {
-      if (first[i].runtimeType == second[i].runtimeType) {
-        f = first[i];
-        s = second[i];
-      } else {
-        f = first[i] is int ? [first[i]] : first[i];
-        s = second[i] is int ? [second[i]] : second[i];
-      }
+  void runSimulation() {
+    _unitsOfSendCount = 0;
 
-      if (f is int) {
-        possibleResult = _checkIntOrder(f, s);
-        if (possibleResult != null) {
-          return possibleResult;
+    int x, y;
+    while (true) {
+      x = _sourceOffset;
+      y = 1;
+
+      comesToRest:
+      while (!_isAbyssReached(y, x)) {
+        if (_map[y][x].isBlocking) {
+          if (_isAbyssReached(y, x - 1) || !_map[y][x - 1].isBlocking) {
+            x -= 1;
+          } else if (_isAbyssReached(y, x + 1) || !_map[y][x + 1].isBlocking) {
+            x += 1;
+          } else {
+            break comesToRest;
+          }
         }
-      } else if (f is List<dynamic>) {
-        possibleResult = _checkListOrder(f, s);
-        if (possibleResult != null) {
-          return possibleResult;
-        }
-      } else {
-        throw ArgumentError("Unknown type: ${f.runtimeType.toString()}");
+        ++y;
       }
 
-      ++i;
-    }
-    if (first.length < second.length) {
-      return true;
-    } else if (first.length > second.length) {
-      return false;
-    } else {
-      return null;
+      if (_isAbyssReached(y, x)) {
+        break;
+      } else {
+        _map[y - 1][x] = Cell.send;
+      }
+
+      ++_unitsOfSendCount;
     }
   }
 
-  bool? _checkIntOrder(int first, int second) {
-    if (first < second) {
-      return true;
-    } else if (first > second) {
-      return false;
-    } else {
-      return null;
-    }
+  bool _isAbyssReached(int y, int x) =>
+      y >= _map.length || x < 0 || x >= _map.first.length;
+
+  String toMapVisualization() {
+    return _map
+        .map((row) => row.map((cell) => cell.toMapVisualization()))
+        .map((row) => row.join())
+        .join("\n");
   }
 }
