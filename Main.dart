@@ -1,25 +1,19 @@
 import 'dart:io';
 
-import 'package:collection/collection.dart';
-
-const ROUNDS_COUNT = 10000;
-
 void main() {
   final input = File("input");
-  final pairsOfPackets = input.readAsLinesSync()
-      .splitAfter((element) => element.isEmpty)
-      .map((list) => Pair<Packet, Packet>(
-          Packet.fromInputLine(list.first), Packet.fromInputLine(list[1])))
+  final firstDividerPacket = Packet([[2]]);
+  final secondDividerPacket = Packet([[6]]);
+  final packets = input.readAsLinesSync()
+      .where((line) => line.isNotEmpty)
+      .map((line) => Packet.fromInputLine(line))
       .toList();
 
-  int result = 0;
-  for (int i = 0; i < pairsOfPackets.length; ++i) {
-    if (pairsOfPackets[i].isOrderRight()) {
-      result += i + 1;
-    }
-  }
+  packets.addAll([firstDividerPacket, secondDividerPacket]);
+  packets.sort();
 
-  print(result);
+  print((packets.indexOf(firstDividerPacket) + 1) *
+      (packets.indexOf(secondDividerPacket) + 1));
 }
 
 class Pair<F, S> {
@@ -43,7 +37,7 @@ class Pair<F, S> {
   String toString() => 'Pair{first: $first, second: $second}';
 }
 
-class Packet {
+class Packet implements Comparable<Packet> {
   final List<dynamic> data;
 
   Packet(this.data);
@@ -106,15 +100,14 @@ class Packet {
     }
     buf.write("]");
   }
-}
 
-extension PairOfPacketsExtenstions on Pair<Packet, Packet> {
-  bool isOrderRight() {
-    bool? result = _checkListOrder(first.data, second.data);
-    if (result != null) {
-      return result;
-    } else {
-      throw ArgumentError("Cannot find out order: $this");
+  @override
+  int compareTo(Packet other) {
+    bool? result = _checkListOrder(this.data, other.data);
+    switch (result) {
+      case true: return -1;
+      case false: return 1;
+      default: return 0;
     }
   }
 
