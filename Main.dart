@@ -8,6 +8,7 @@ void main() {
 
   print(game.toMapVisualization());
   game.runSimulation();
+  print(game.toMapVisualization());
 
   print(game.unitsOfSendCount);
 }
@@ -30,7 +31,7 @@ enum Cell {
 class Game {
   var _startOffset = 500;
   var _sourceOffset = 0;
-  final _map = [<Cell>[Cell.source]];
+  final _map = [<Cell>[Cell.source], [Cell.air], [Cell.rock]];
   var _unitsOfSendCount = 0;
 
   get unitsOfSendCount => _unitsOfSendCount;
@@ -42,8 +43,8 @@ class Game {
         .map((scan) => scan.split(","))
         .map((coords) => Point(int.parse(coords.first), int.parse(coords.last)))
         .reduce((prevScan, scan) {
-          _adjustMapBounds(prevScan);
-          _adjustMapBounds(scan);
+          _adjustMapBounds(prevScan.x, prevScan.y);
+          _adjustMapBounds(scan.x, scan.y);
 
           if (prevScan != scan) {
             if (prevScan.x == scan.x) {
@@ -68,24 +69,35 @@ class Game {
         });
   }
 
-  void _adjustMapBounds(Point<int> scan) {
-    while (scan.x - _startOffset < 0) {
-      for (final List<Cell> row in _map) {
-        row.insert(0, Cell.air);
+  void _adjustMapBounds(int x, int y) {
+    _adjustMapWidth(x);
+
+    while (_map.length <= y + 2) {
+      _map.insert(_map.length - 2,
+          List.filled(_map.first.length, Cell.air, growable: true));
+    }
+  }
+
+  int _adjustMapWidth(int x) {
+    int diff = 0;
+
+    while (x - _startOffset < 0) {
+      for (int i = 0; i < _map.length; ++i) {
+        _map[i].insert(
+            0, i + 1 >= _map.length ? Cell.rock : Cell.air);
       }
       --_startOffset;
       ++_sourceOffset;
+      ++diff;
     }
 
-    while (scan.x - (_startOffset + _map.first.length - 1) > 0) {
-      for (final List<Cell> row in _map) {
-        row.add(Cell.air);
+    while (x - (_startOffset + _map.first.length - 1) > 0) {
+      for (int i = 0; i < _map.length; ++i) {
+        _map[i].add(i + 1 >= _map.length ? Cell.rock : Cell.air);
       }
     }
 
-    while (_map.length <= scan.y) {
-      _map.add(List.filled(_map.first.length, Cell.air, growable: true));
-    }
+    return diff;
   }
 
   void runSimulation() {
@@ -99,9 +111,12 @@ class Game {
       comesToRest:
       while (!_isAbyssReached(y, x)) {
         if (_map[y][x].isBlocking) {
-          if (_isAbyssReached(y, x - 1) || !_map[y][x - 1].isBlocking) {
+          x += _adjustMapWidth(x - 1 + _startOffset);
+          x += _adjustMapWidth(x + 1 + _startOffset);
+
+          if (!_map[y][x - 1].isBlocking) {
             x -= 1;
-          } else if (_isAbyssReached(y, x + 1) || !_map[y][x + 1].isBlocking) {
+          } else if (!_map[y][x + 1].isBlocking) {
             x += 1;
           } else {
             break comesToRest;
@@ -110,13 +125,13 @@ class Game {
         ++y;
       }
 
-      if (_isAbyssReached(y, x)) {
+      ++_unitsOfSendCount;
+
+      if (x == _sourceOffset && y == 1) {
         break;
       } else {
         _map[y - 1][x] = Cell.send;
       }
-
-      ++_unitsOfSendCount;
     }
   }
 
