@@ -3,7 +3,9 @@ import 'dart:math';
 
 import 'package:collection/collection.dart';
 
-const ANSWER_ROW = 2000000;
+const COORDINATE_MIN = 0;
+const COORDINATE_MAX = 4000000;
+const TUNING_FREQUENCY_X_MULTIPLIER = 4000000;
 
 void main() {
   final input = File("input");
@@ -11,45 +13,60 @@ void main() {
       .map((line) => Sensor.fromInputLine(line))
       .toList();
 
-  final coveragesForLine = sensors
-      .map((sensor) => sensor.coverageForLine(ANSWER_ROW))
-      .whereNotNull();
-  final coveredCells = coveragesForLine.fold(
-      <IntRange>[], (List<IntRange> acc, IntRange range) {
-    if (acc.isEmpty) {
-      acc.add(range);
-    } else {
-      int i = 0;
-      while (i < acc.length) {
-        if (IntRange.isOverlap(acc[i], range)) {
-          range = IntRange(
-              min(acc[i].first, range.first), max(acc[i].last, range.last));
-          acc.removeAt(i);
+  for (int i = COORDINATE_MIN; i <= COORDINATE_MAX; ++i) {
+    final coveragesForLine = sensors
+        .map((sensor) => sensor.coverageForLine(i))
+        .map((range) {
+          if (range == null) {
+            return null;
+          } else if (range.last < COORDINATE_MIN || range.first > COORDINATE_MAX) {
+            return null;
+          } else if (range.first < COORDINATE_MIN && COORDINATE_MIN < range.last) {
+            return IntRange(COORDINATE_MIN, min(range.last, COORDINATE_MAX));
+          } else if (range.first < COORDINATE_MAX && COORDINATE_MAX < range.last) {
+            return IntRange(max(range.first, COORDINATE_MIN), COORDINATE_MAX);
+          } else {
+            return range;
+          }
+        })
+        .whereNotNull()
+        .fold(<IntRange>[], (List<IntRange> acc, IntRange range) {
           if (acc.isEmpty) {
             acc.add(range);
-            break;
-          } else if (i == 0) {
-            continue;
+          } else {
+            int i = 0;
+            while (i < acc.length) {
+              if (IntRange.isOverlap(acc[i], range) || acc[i].last + 1 == range.first || range.last + 1 == acc[i].first) {
+                range = IntRange(
+                    min(acc[i].first, range.first),
+                    max(acc[i].last, range.last));
+                acc.removeAt(i);
+                if (acc.isEmpty) {
+                  acc.add(range);
+                  break;
+                } else {
+                  if (i > 0) {
+                    --i;
+                  }
+                  continue;
+                }
+              } else if (acc[i].first > range.first) {
+                acc.insert(max(i, 0), range);
+                break;
+              } else if (i + 1 == acc.length) {
+                acc.add(range);
+                break;
+              }
+              ++i;
+            }
           }
-        } else if (acc[i].first > range.first) {
-          acc.insert(max(i, 0), range);
-          break;
-        } else if (i + 1 == acc.length) {
-          acc.add(range);
-          break;
-        }
-        ++i;
-      }
+          return acc;
+        });
+    if (coveragesForLine.length > 1) {
+      print((coveragesForLine.first.last + 1) * TUNING_FREQUENCY_X_MULTIPLIER + i); //7935413
+      break;
     }
-    return acc;
-  })
-      .fold(0, (int acc, IntRange range) => acc + range.length);
-  final foundBeaconsCount = sensors
-      .map((sensor) => sensor.closestBeacon.position.y)
-      .toSet()
-      .fold(0, (int acc, beaconY) => acc + (beaconY == ANSWER_ROW ? 1 : 0));
-
-  print(coveredCells - foundBeaconsCount);
+  }
 }
 
 class Beacon {
