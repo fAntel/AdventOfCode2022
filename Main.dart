@@ -1,147 +1,155 @@
 import 'dart:io';
 import 'dart:math';
 
+import 'package:collection/collection.dart';
+
+const ANSWER_ROW = 2000000;
+
 void main() {
   final input = File("input");
-  final game = Game();
-  input.readAsLinesSync().forEach((line) { game.buildMap(line); });
+  final sensors = input.readAsLinesSync()
+      .map((line) => Sensor.fromInputLine(line))
+      .toList();
 
-  print(game.toMapVisualization());
-  game.runSimulation();
-  print(game.toMapVisualization());
-
-  print(game.unitsOfSendCount);
-}
-
-enum Cell {
-  air, rock, send, source;
-
-  bool get isBlocking => this != Cell.air && this != Cell.source;
-
-  String toMapVisualization() {
-    switch (this) {
-      case Cell.air: return ".";
-      case Cell.rock: return "#";
-      case Cell.send: return "o";
-      case Cell.source: return "+";
-    }
-  }
-}
-
-class Game {
-  var _startOffset = 500;
-  var _sourceOffset = 0;
-  final _map = [<Cell>[Cell.source], [Cell.air], [Cell.rock]];
-  var _unitsOfSendCount = 0;
-
-  get unitsOfSendCount => _unitsOfSendCount;
-
-  void buildMap(String inputLine) {
-    inputLine
-        .split("->")
-        .map((scan) => scan.trim())
-        .map((scan) => scan.split(","))
-        .map((coords) => Point(int.parse(coords.first), int.parse(coords.last)))
-        .reduce((prevScan, scan) {
-          _adjustMapBounds(prevScan.x, prevScan.y);
-          _adjustMapBounds(scan.x, scan.y);
-
-          if (prevScan != scan) {
-            if (prevScan.x == scan.x) {
-              var from = min(prevScan.y, scan.y);
-              final to = max(prevScan.y, scan.y);
-              final x = scan.x - _startOffset;
-              while (from <= to) {
-                _map[from][x] = Cell.rock;
-                ++from;
-              }
-            } else { // prevScan.y == scan.y
-              var from = min(prevScan.x, scan.x) - _startOffset;
-              final to = max(prevScan.x, scan.x) - _startOffset;
-              while (from <= to) {
-                _map[scan.y][from] = Cell.rock;
-                ++from;
-              }
-            }
+  final coveragesForLine = sensors
+      .map((sensor) => sensor.coverageForLine(ANSWER_ROW))
+      .whereNotNull();
+  final coveredCells = coveragesForLine.fold(
+      <IntRange>[], (List<IntRange> acc, IntRange range) {
+    if (acc.isEmpty) {
+      acc.add(range);
+    } else {
+      int i = 0;
+      while (i < acc.length) {
+        if (IntRange.isOverlap(acc[i], range)) {
+          range = IntRange(
+              min(acc[i].first, range.first), max(acc[i].last, range.last));
+          acc.removeAt(i);
+          if (acc.isEmpty) {
+            acc.add(range);
+            break;
+          } else if (i == 0) {
+            continue;
           }
-
-          return scan;        
-        });
-  }
-
-  void _adjustMapBounds(int x, int y) {
-    _adjustMapWidth(x);
-
-    while (_map.length <= y + 2) {
-      _map.insert(_map.length - 2,
-          List.filled(_map.first.length, Cell.air, growable: true));
-    }
-  }
-
-  int _adjustMapWidth(int x) {
-    int diff = 0;
-
-    while (x - _startOffset < 0) {
-      for (int i = 0; i < _map.length; ++i) {
-        _map[i].insert(
-            0, i + 1 >= _map.length ? Cell.rock : Cell.air);
-      }
-      --_startOffset;
-      ++_sourceOffset;
-      ++diff;
-    }
-
-    while (x - (_startOffset + _map.first.length - 1) > 0) {
-      for (int i = 0; i < _map.length; ++i) {
-        _map[i].add(i + 1 >= _map.length ? Cell.rock : Cell.air);
-      }
-    }
-
-    return diff;
-  }
-
-  void runSimulation() {
-    _unitsOfSendCount = 0;
-
-    int x, y;
-    while (true) {
-      x = _sourceOffset;
-      y = 1;
-
-      comesToRest:
-      while (!_isAbyssReached(y, x)) {
-        if (_map[y][x].isBlocking) {
-          x += _adjustMapWidth(x - 1 + _startOffset);
-          x += _adjustMapWidth(x + 1 + _startOffset);
-
-          if (!_map[y][x - 1].isBlocking) {
-            x -= 1;
-          } else if (!_map[y][x + 1].isBlocking) {
-            x += 1;
-          } else {
-            break comesToRest;
-          }
+        } else if (acc[i].first > range.first) {
+          acc.insert(max(i, 0), range);
+          break;
+        } else if (i + 1 == acc.length) {
+          acc.add(range);
+          break;
         }
-        ++y;
-      }
-
-      ++_unitsOfSendCount;
-
-      if (x == _sourceOffset && y == 1) {
-        break;
-      } else {
-        _map[y - 1][x] = Cell.send;
+        ++i;
       }
     }
+    return acc;
+  })
+      .fold(0, (int acc, IntRange range) => acc + range.length);
+  final foundBeaconsCount = sensors
+      .map((sensor) => sensor.closestBeacon.position.y)
+      .toSet()
+      .fold(0, (int acc, beaconY) => acc + (beaconY == ANSWER_ROW ? 1 : 0));
+
+  print(coveredCells - foundBeaconsCount);
+}
+
+class Beacon {
+  final Point<int> position;
+
+  Beacon(this.position);
+  
+  Beacon.fromCoordinates(int x, int y) : position = Point(x, y);
+
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is Beacon &&
+          runtimeType == other.runtimeType &&
+          position == other.position;
+
+  @override
+  int get hashCode => position.hashCode;
+
+  @override
+  String toString() => "Beacon{position: $position}";
+}
+
+class Sensor {
+  static const _SENSOR_X = "sensorX";
+  static const _SENSOR_Y = "sensorY";
+  static const _BEACON_X = "beaconX";
+  static const _BEACON_Y = "beaconY";
+  static const _INPUT_PATTERN = "Sensor at x=(?<$_SENSOR_X>-?\\d+), y=(?<$_SENSOR_Y>-?\\d+): closest beacon is at x=(?<$_BEACON_X>-?\\d+), y=(?<$_BEACON_Y>-?\\d+)";
+  static final _INPUT_REGEXP = RegExp(_INPUT_PATTERN);
+
+  final Point<int> position;
+  final Beacon closestBeacon;
+  final int _sensorRadius;
+
+  Sensor(this.position, this.closestBeacon) :
+        _sensorRadius = (position.x - closestBeacon.position.x).abs() +
+            (position.y - closestBeacon.position.y).abs();
+
+  factory Sensor.fromInputLine(String inputLine) {
+    final match = _INPUT_REGEXP.firstMatch(inputLine);
+    if (match == null)
+      throw ArgumentError('Cannot parse input: "$inputLine".');
+    if (!match.groupNames.contains(_SENSOR_X) ||
+        !match.groupNames.contains(_SENSOR_Y) ||
+        !match.groupNames.contains(_BEACON_X) ||
+        !match.groupNames.contains(_BEACON_Y))
+      throw ArgumentError("Some groups missed. There are only groups with names: ${match.groupNames.join(", ")}.");
+
+    return Sensor(
+      Point(int.parse(match.namedGroup(_SENSOR_X)!),
+          int.parse(match.namedGroup(_SENSOR_Y)!)),
+      Beacon.fromCoordinates(int.parse(match.namedGroup(_BEACON_X)!),
+          int.parse(match.namedGroup(_BEACON_Y)!)),
+    );
   }
 
-  bool _isAbyssReached(int y, int x) =>
-      y >= _map.length || x < 0 || x >= _map.first.length;
+  IntRange? coverageForLine(int line) {
+    if (position.y + _sensorRadius < line || position.y - _sensorRadius > line)
+      return null;
 
-  String toMapVisualization() {
-    return _map
-        .map((row) => row.map((cell) => cell.toMapVisualization()))
-        .map((row) => row.join())
-        .join("\n");
+    final int linesFromCenter =
+        line >= position.y ? line - position.y : position.y - line;
+    final int lineRadius = _sensorRadius - linesFromCenter;
+    return IntRange(position.x - lineRadius, position.x + lineRadius);
   }
+
+  @override
+  String toString() =>
+      "Sensor{position: $position, closest beacon: $closestBeacon}";
+}
+
+class IntRange {
+  final int first;
+  final int last;
+
+  IntRange(this.first, this.last) {
+    assert(first <= last);
+  }
+
+  int get length => last - first + 1;
+
+  static bool isOverlap(IntRange a, IntRange b) =>
+      (a.first <= b.first && b.first <= a.last) ||
+      (a.first <= b.last && b.last <= a.last) ||
+      (b.first <= a.first && a.first <= b.last) ||
+      (b.first <= a.first && a.first <= b.last);
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+          other is IntRange &&
+              runtimeType == other.runtimeType &&
+              first == other.first &&
+              last == other.last;
+
+  @override
+  int get hashCode => first.hashCode ^ last.hashCode;
+
+  @override
+  String toString() => "IntRange{$first..$last}";
 }
