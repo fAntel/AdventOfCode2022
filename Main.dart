@@ -1,172 +1,258 @@
 import 'dart:io';
-import 'dart:math';
 
 import 'package:collection/collection.dart';
 
-const COORDINATE_MIN = 0;
-const COORDINATE_MAX = 4000000;
-const TUNING_FREQUENCY_X_MULTIPLIER = 4000000;
+const CHAMBER_WIDTH = 7;
 
 void main() {
   final input = File("input");
-  final sensors = input.readAsLinesSync()
-      .map((line) => Sensor.fromInputLine(line))
-      .toList();
+  final gasJetsPattern = input.readAsStringSync();
 
-  for (int i = COORDINATE_MIN; i <= COORDINATE_MAX; ++i) {
-    final coveragesForLine = sensors
-        .map((sensor) => sensor.coverageForLine(i))
-        .map((range) {
-          if (range == null) {
-            return null;
-          } else if (range.last < COORDINATE_MIN || range.first > COORDINATE_MAX) {
-            return null;
-          } else if (range.first < COORDINATE_MIN && COORDINATE_MIN < range.last) {
-            return IntRange(COORDINATE_MIN, min(range.last, COORDINATE_MAX));
-          } else if (range.first < COORDINATE_MAX && COORDINATE_MAX < range.last) {
-            return IntRange(max(range.first, COORDINATE_MIN), COORDINATE_MAX);
-          } else {
-            return range;
-          }
-        })
-        .whereNotNull()
-        .fold(<IntRange>[], (List<IntRange> acc, IntRange range) {
-          if (acc.isEmpty) {
-            acc.add(range);
-          } else {
-            int i = 0;
-            while (i < acc.length) {
-              if (IntRange.isOverlap(acc[i], range) || acc[i].last + 1 == range.first || range.last + 1 == acc[i].first) {
-                range = IntRange(
-                    min(acc[i].first, range.first),
-                    max(acc[i].last, range.last));
-                acc.removeAt(i);
-                if (acc.isEmpty) {
-                  acc.add(range);
-                  break;
-                } else {
-                  if (i > 0) {
-                    --i;
-                  }
-                  continue;
-                }
-              } else if (acc[i].first > range.first) {
-                acc.insert(max(i, 0), range);
-                break;
-              } else if (i + 1 == acc.length) {
-                acc.add(range);
-                break;
-              }
-              ++i;
-            }
-          }
-          return acc;
-        });
-    if (coveragesForLine.length > 1) {
-      print((coveragesForLine.first.last + 1) * TUNING_FREQUENCY_X_MULTIPLIER + i); //7935413
-      break;
+  final game = Game(gasJetsPattern, 2022);
+  game.run();
+  print(game.map.toString());
+  print(game.map.map.length);
+}
+
+class Game {
+  final _map = Map();
+  final _maxFiguresToAppear;
+  Figure _currentFigure = Figure.horizontalLine;
+  int _figuresAppeared = 0;
+  final String _gasJetsPattern;
+  int _currentGasJetIndex = 0;
+
+  Game(this._gasJetsPattern, this._maxFiguresToAppear);
+  
+  Map get map => _map;
+
+  void run() {
+    _figuresAppeared = 0;
+    while (_figuresAppeared < _maxFiguresToAppear) {
+      _map.appear(_currentFigure);
+      _emulateFigureFalling();
+      _currentFigure = _currentFigure.next();
+      ++_figuresAppeared;
     }
   }
-}
 
-class Beacon {
-  final Point<int> position;
+  void _emulateFigureFalling() {
+    int fallingFigureTopLine = 0;
+    int prevFallingFigureTopLine = -1;
+    while (fallingFigureTopLine != prevFallingFigureTopLine) {
+      prevFallingFigureTopLine = fallingFigureTopLine;
+      _moveFallingFigureIfPossible(fallingFigureTopLine);
+      fallingFigureTopLine = _fall(fallingFigureTopLine);
+    }
+    _markComingToRest(fallingFigureTopLine);
 
-  Beacon(this.position);
-  
-  Beacon.fromCoordinates(int x, int y) : position = Point(x, y);
-
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is Beacon &&
-          runtimeType == other.runtimeType &&
-          position == other.position;
-
-  @override
-  int get hashCode => position.hashCode;
-
-  @override
-  String toString() => "Beacon{position: $position}";
-}
-
-class Sensor {
-  static const _SENSOR_X = "sensorX";
-  static const _SENSOR_Y = "sensorY";
-  static const _BEACON_X = "beaconX";
-  static const _BEACON_Y = "beaconY";
-  static const _INPUT_PATTERN = "Sensor at x=(?<$_SENSOR_X>-?\\d+), y=(?<$_SENSOR_Y>-?\\d+): closest beacon is at x=(?<$_BEACON_X>-?\\d+), y=(?<$_BEACON_Y>-?\\d+)";
-  static final _INPUT_REGEXP = RegExp(_INPUT_PATTERN);
-
-  final Point<int> position;
-  final Beacon closestBeacon;
-  final int _sensorRadius;
-
-  Sensor(this.position, this.closestBeacon) :
-        _sensorRadius = (position.x - closestBeacon.position.x).abs() +
-            (position.y - closestBeacon.position.y).abs();
-
-  factory Sensor.fromInputLine(String inputLine) {
-    final match = _INPUT_REGEXP.firstMatch(inputLine);
-    if (match == null)
-      throw ArgumentError('Cannot parse input: "$inputLine".');
-    if (!match.groupNames.contains(_SENSOR_X) ||
-        !match.groupNames.contains(_SENSOR_Y) ||
-        !match.groupNames.contains(_BEACON_X) ||
-        !match.groupNames.contains(_BEACON_Y))
-      throw ArgumentError("Some groups missed. There are only groups with names: ${match.groupNames.join(", ")}.");
-
-    return Sensor(
-      Point(int.parse(match.namedGroup(_SENSOR_X)!),
-          int.parse(match.namedGroup(_SENSOR_Y)!)),
-      Beacon.fromCoordinates(int.parse(match.namedGroup(_BEACON_X)!),
-          int.parse(match.namedGroup(_BEACON_Y)!)),
-    );
+    while (_map.map[0].none((cell) => cell != Cell.empty)) {
+      _map.map.removeAt(0);
+    }
   }
 
-  IntRange? coverageForLine(int line) {
-    if (position.y + _sensorRadius < line || position.y - _sensorRadius > line)
-      return null;
+  void _moveFallingFigureIfPossible(int fallingFigureTopLine) {
+    final gasJetChar = _gasJetsPattern[_currentGasJetIndex++];
+    if (_currentGasJetIndex >= _gasJetsPattern.length) {
+      _currentGasJetIndex = 0;
+    }
+    final int gasJetDirection;
+    switch (gasJetChar) {
+      case ">":
+        gasJetDirection = 1;
+        break;
+      case "<":
+        gasJetDirection = -1;
+        break;
+      default: throw(StateError("Unknown direction $gasJetChar"));
+    }
+    bool canBeMoved = true;
+    for (int i = 0, y = fallingFigureTopLine; i < _currentFigure.height; ++i, ++y) {
+      final int fallingIndex = gasJetDirection > 0
+          ? _map.map[y].lastIndexWhere((cell) => cell == Cell.fallingRock)
+          : _map.map[y].indexWhere((cell) => cell == Cell.fallingRock);
 
-    final int linesFromCenter =
-        line >= position.y ? line - position.y : position.y - line;
-    final int lineRadius = _sensorRadius - linesFromCenter;
-    return IntRange(position.x - lineRadius, position.x + lineRadius);
+      final possiblePositionAfterMove = fallingIndex + gasJetDirection;
+      if (possiblePositionAfterMove < 0 ||
+          possiblePositionAfterMove >= CHAMBER_WIDTH ||
+          _map.map[y][possiblePositionAfterMove] != Cell.empty) {
+        canBeMoved = false;
+        break;
+      }
+    }
+
+    if (canBeMoved) {
+      for (int i = 0, y = fallingFigureTopLine; i < _currentFigure.height; ++i, ++y) {
+        for (int j = 0, x = gasJetDirection > 0 ? CHAMBER_WIDTH - 2 : 1;
+            j < _map.map[y].length - 1;
+            ++j, x -= gasJetDirection) {
+          if (_map.map[y][x] == Cell.fallingRock) {
+            _map.map[y][x] = Cell.empty;
+            _map.map[y][x + gasJetDirection] = Cell.fallingRock;
+          }
+        }
+      }
+    }
+  }
+
+  int _fall(int fallingFigureTopLine) {
+    if (fallingFigureTopLine + _currentFigure.height >= _map.map.length)
+      return fallingFigureTopLine;
+
+    bool canBeMoved = true;
+    for (int i = 0, y = fallingFigureTopLine; i < _currentFigure.height; ++i, ++y) {
+      for (int j = 0; j < _map.map[y].length; ++j) {
+        if (_map.map[y][j] == Cell.fallingRock) {
+          if (_map.map[y + 1][j] == Cell.stoppedRock) {
+            canBeMoved = false;
+            break;
+          }
+        }
+      }
+    }
+
+    if (canBeMoved) {
+      for (int i = 0, y = fallingFigureTopLine + _currentFigure.height;
+          i < _currentFigure.height;
+          ++i, --y) {
+        for (int j = 0; j < _map.map[y].length; ++j) {
+          if (_map.map[y - 1][j] == Cell.fallingRock) {
+            _map.map[y - 1][j] = Cell.empty;
+            _map.map[y][j] = Cell.fallingRock;
+          }
+        }
+      }
+
+      ++fallingFigureTopLine;
+    }
+
+    return fallingFigureTopLine;
+  }
+
+  void _markComingToRest(int fallingFigureTopLine) {
+    for (int i = 0, y = fallingFigureTopLine; i < _currentFigure.height; ++i, ++y) {
+      for (int j = 0; j < _map.map[y].length; ++j) {
+        if (_map.map[y][j] == Cell.fallingRock) {
+          _map.map[y][j] = Cell.stoppedRock;
+        }
+      }
+    }
   }
 
   @override
   String toString() =>
-      "Sensor{position: $position, closest beacon: $closestBeacon}";
+      "Game{" +
+          "figures appeared: $_figuresAppeared of $_maxFiguresToAppear, " +
+          "current figure: $_currentFigure, " +
+          "gas jets pattern: $_gasJetsPattern, " +
+          "current gas jet: ${_gasJetsPattern[_currentGasJetIndex]} ($_currentGasJetIndex), " +
+          "map:\n$_map,}";
 }
 
-class IntRange {
-  final int first;
-  final int last;
+class Map {
+  static const _DEFAULT_GAP = 3;
 
-  IntRange(this.first, this.last) {
-    assert(first <= last);
+  final List<List<Cell>> _data = List.empty(growable: true);
+
+  List<List<Cell>> get map => _data;
+
+  void appear(Figure figure) {
+    for (int i = 0; i < _DEFAULT_GAP; ++i) {
+      _data.insert(0, List.filled(CHAMBER_WIDTH, Cell.empty));
+    }
+
+    figure.toAppearPart().reversed.forEach((row) { _data.insert(0, row); });
   }
 
-  int get length => last - first + 1;
-
-  static bool isOverlap(IntRange a, IntRange b) =>
-      (a.first <= b.first && b.first <= a.last) ||
-      (a.first <= b.last && b.last <= a.last) ||
-      (b.first <= a.first && a.first <= b.last) ||
-      (b.first <= a.first && a.first <= b.last);
-
   @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-          other is IntRange &&
-              runtimeType == other.runtimeType &&
-              first == other.first &&
-              last == other.last;
+  String toString() =>
+      _data
+          .map((row) => row.map((cell) => cell.toVisualization()))
+          .map((row) => "|${row.join()}|")
+          .join("\n") + "\n+${List.filled(CHAMBER_WIDTH, "-").join()}+";
+}
 
-  @override
-  int get hashCode => first.hashCode ^ last.hashCode;
+enum Cell {
+  empty, stoppedRock, fallingRock;
 
-  @override
-  String toString() => "IntRange{$first..$last}";
+  String toVisualization() {
+    switch (this) {
+      case Cell.empty: return ".";
+      case Cell.stoppedRock: return "#";
+      case Cell.fallingRock: return "@";
+    }
+  }
+}
+
+enum Figure {
+  horizontalLine, cross, reverseLShape, verticalLine, qube;
+
+  static const _START_OFFSET = 2;
+
+  int get height {
+    switch (this) {
+      case Figure.horizontalLine: return 1;
+      case Figure.cross: return 3;
+      case Figure.reverseLShape: return 3;
+      case Figure.verticalLine: return 4;
+      case Figure.qube: return 2;
+    }
+  }
+
+  Figure next() {
+    switch (this) {
+      case Figure.horizontalLine: return Figure.cross;
+      case Figure.cross: return Figure.reverseLShape;
+      case Figure.reverseLShape: return Figure.verticalLine;
+      case Figure.verticalLine: return Figure.qube;
+      case Figure.qube: return Figure.horizontalLine;
+    }
+  }
+
+  List<List<Cell>> toAppearPart() {
+    final result =
+        List.generate(height, (i) => List.filled(CHAMBER_WIDTH, Cell.empty));
+    switch (this) {
+      case Figure.horizontalLine:
+        for (int i = 0; i < 4; ++i) {
+          result[0][_START_OFFSET + i] = Cell.fallingRock;
+        }
+        break;
+      case Figure.cross:
+        result[0][_START_OFFSET + 1] = Cell.fallingRock;
+        for (int i = 0; i < 3; ++i) {
+          result[1][_START_OFFSET + i] = Cell.fallingRock;
+        }
+        result[2][_START_OFFSET + 1] = Cell.fallingRock;
+        break;
+      case Figure.reverseLShape:
+        for (int i = 0; i < 2; ++i) {
+          result[i][_START_OFFSET + 2] = Cell.fallingRock;
+        }
+        for (int i = 0; i < 3; ++i) {
+          result[2][_START_OFFSET + i] = Cell.fallingRock;
+        }
+        break;
+      case Figure.verticalLine:
+        for (int i = 0; i < result.length; ++i) {
+          result[i][_START_OFFSET] = Cell.fallingRock;
+        }
+        break;
+      case Figure.qube:
+        for (int i = 0; i < result.length; ++i) {
+          for (int j = 0; j < result.length; ++j) {
+            result[i][_START_OFFSET + j] = Cell.fallingRock;
+          }
+        }
+        break;
+    }
+    return result;
+  }
+
+  String toVisualization() {
+    List<List<Cell>> appearPart = toAppearPart();
+    return appearPart
+        .map((row) => row.map((cell) => cell.toVisualization()).join())
+        .join("\n");
+  }
 }
