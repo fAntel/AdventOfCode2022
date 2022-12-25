@@ -2,257 +2,254 @@ import 'dart:io';
 
 import 'package:collection/collection.dart';
 
-const CHAMBER_WIDTH = 7;
+import 'utils/RedBlackTree.dart';
 
 void main() {
   final input = File("input");
-  final gasJetsPattern = input.readAsStringSync();
+  final qubes = input.readAsLinesSync()
+      .map((line) => Coordinate.fromInputLine(line))
+      .map((coord) => Qube(coord))
+      .toList(growable: false);
 
-  final game = Game(gasJetsPattern, 2022);
-  game.run();
-  print(game.map.toString());
-  print(game.map.map.length);
+  final SparseIntArray<SparseIntArray<SparseIntArray<Qube>>> bitOfLava =
+      SparseIntArray();
+  qubes.forEach((qube) {
+    final x = qube.coordinate.x;
+    final y = qube.coordinate.y;
+    final z = qube.coordinate.z;
+    if (!bitOfLava.containsIndex(z)) {
+      bitOfLava[z] = SparseIntArray<SparseIntArray<Qube>>();
+    }
+    if (!bitOfLava[z]!.containsIndex(x)) {
+      bitOfLava[z]![x] = SparseIntArray<Qube>();
+    }
+    bitOfLava[z]![x]![y] = qube;
+  });
+
+  //printQubeBySurfaces(bitOfLava);
+
+  int prevZ = -1;
+  for (final int z in bitOfLava.indexes) {
+    final zSurface = bitOfLava[z];
+    if (zSurface == null || zSurface.isEmpty)
+      continue;
+
+    int prevX = -1;
+    for (final int x in zSurface.indexes) {
+      final yLine = zSurface[x];
+      if (yLine == null || yLine.isEmpty)
+        continue;
+
+      int prevY = -1;
+      for (final int y in yLine.indexes) {
+        final Qube currentQube = yLine[y]!;
+
+        if (prevY >= 0 && y - prevY <= 1) {
+          final Qube? bottomQube = yLine[prevY];
+          if (bottomQube != null) {
+            bottomQube.markSideHidden(Side.top);
+            currentQube.markSideHidden(Side.bottom);
+          }
+        }
+
+        if (prevX >= 0 && x - prevX <= 1) {
+          final Qube? leftQube = zSurface[prevX]?[y];
+          if (leftQube != null) {
+            leftQube.markSideHidden(Side.right);
+            currentQube.markSideHidden(Side.left);
+          }
+        }
+
+        if (prevZ >= 0 && z - prevZ <= 1) {
+          final Qube? frontQube = bitOfLava[prevZ]?[x]?[y];
+          if (frontQube != null) {
+            frontQube.markSideHidden(Side.back);
+            currentQube.markSideHidden(Side.front);
+          }
+        }
+
+        prevY = y;
+      }
+
+      prevX = x;
+    }
+
+    prevZ = z;
+  }
+
+  final result = qubes.fold(0, (int sum, qube) => sum + qube.visibleSidesCount);
+  print(result);
 }
 
-class Game {
-  final _map = Map();
-  final _maxFiguresToAppear;
-  Figure _currentFigure = Figure.horizontalLine;
-  int _figuresAppeared = 0;
-  final String _gasJetsPattern;
-  int _currentGasJetIndex = 0;
+enum Side {
+  top(bit: 1), bottom(bit: 2), left(bit: 4), right(bit: 8), front(bit: 16),
+  back(bit: 32);
 
-  Game(this._gasJetsPattern, this._maxFiguresToAppear);
+  static const ALL_SIDES_VISIBLE_MAP = 0x3F;
+
+  final int bit;
+
+  const Side({
+    required this.bit,
+  });
+}
+
+class Qube {
+  final Coordinate coordinate;
+  int visibleSidesBitMap = Side.ALL_SIDES_VISIBLE_MAP;
   
-  Map get map => _map;
-
-  void run() {
-    _figuresAppeared = 0;
-    while (_figuresAppeared < _maxFiguresToAppear) {
-      _map.appear(_currentFigure);
-      _emulateFigureFalling();
-      _currentFigure = _currentFigure.next();
-      ++_figuresAppeared;
-    }
-  }
-
-  void _emulateFigureFalling() {
-    int fallingFigureTopLine = 0;
-    int prevFallingFigureTopLine = -1;
-    while (fallingFigureTopLine != prevFallingFigureTopLine) {
-      prevFallingFigureTopLine = fallingFigureTopLine;
-      _moveFallingFigureIfPossible(fallingFigureTopLine);
-      fallingFigureTopLine = _fall(fallingFigureTopLine);
-    }
-    _markComingToRest(fallingFigureTopLine);
-
-    while (_map.map[0].none((cell) => cell != Cell.empty)) {
-      _map.map.removeAt(0);
-    }
-  }
-
-  void _moveFallingFigureIfPossible(int fallingFigureTopLine) {
-    final gasJetChar = _gasJetsPattern[_currentGasJetIndex++];
-    if (_currentGasJetIndex >= _gasJetsPattern.length) {
-      _currentGasJetIndex = 0;
-    }
-    final int gasJetDirection;
-    switch (gasJetChar) {
-      case ">":
-        gasJetDirection = 1;
-        break;
-      case "<":
-        gasJetDirection = -1;
-        break;
-      default: throw(StateError("Unknown direction $gasJetChar"));
-    }
-    bool canBeMoved = true;
-    for (int i = 0, y = fallingFigureTopLine; i < _currentFigure.height; ++i, ++y) {
-      final int fallingIndex = gasJetDirection > 0
-          ? _map.map[y].lastIndexWhere((cell) => cell == Cell.fallingRock)
-          : _map.map[y].indexWhere((cell) => cell == Cell.fallingRock);
-
-      final possiblePositionAfterMove = fallingIndex + gasJetDirection;
-      if (possiblePositionAfterMove < 0 ||
-          possiblePositionAfterMove >= CHAMBER_WIDTH ||
-          _map.map[y][possiblePositionAfterMove] != Cell.empty) {
-        canBeMoved = false;
-        break;
-      }
-    }
-
-    if (canBeMoved) {
-      for (int i = 0, y = fallingFigureTopLine; i < _currentFigure.height; ++i, ++y) {
-        for (int j = 0, x = gasJetDirection > 0 ? CHAMBER_WIDTH - 2 : 1;
-            j < _map.map[y].length - 1;
-            ++j, x -= gasJetDirection) {
-          if (_map.map[y][x] == Cell.fallingRock) {
-            _map.map[y][x] = Cell.empty;
-            _map.map[y][x + gasJetDirection] = Cell.fallingRock;
-          }
-        }
-      }
-    }
-  }
-
-  int _fall(int fallingFigureTopLine) {
-    if (fallingFigureTopLine + _currentFigure.height >= _map.map.length)
-      return fallingFigureTopLine;
-
-    bool canBeMoved = true;
-    for (int i = 0, y = fallingFigureTopLine; i < _currentFigure.height; ++i, ++y) {
-      for (int j = 0; j < _map.map[y].length; ++j) {
-        if (_map.map[y][j] == Cell.fallingRock) {
-          if (_map.map[y + 1][j] == Cell.stoppedRock) {
-            canBeMoved = false;
-            break;
-          }
-        }
-      }
-    }
-
-    if (canBeMoved) {
-      for (int i = 0, y = fallingFigureTopLine + _currentFigure.height;
-          i < _currentFigure.height;
-          ++i, --y) {
-        for (int j = 0; j < _map.map[y].length; ++j) {
-          if (_map.map[y - 1][j] == Cell.fallingRock) {
-            _map.map[y - 1][j] = Cell.empty;
-            _map.map[y][j] = Cell.fallingRock;
-          }
-        }
-      }
-
-      ++fallingFigureTopLine;
-    }
-
-    return fallingFigureTopLine;
-  }
-
-  void _markComingToRest(int fallingFigureTopLine) {
-    for (int i = 0, y = fallingFigureTopLine; i < _currentFigure.height; ++i, ++y) {
-      for (int j = 0; j < _map.map[y].length; ++j) {
-        if (_map.map[y][j] == Cell.fallingRock) {
-          _map.map[y][j] = Cell.stoppedRock;
-        }
-      }
-    }
-  }
-
-  @override
-  String toString() =>
-      "Game{" +
-          "figures appeared: $_figuresAppeared of $_maxFiguresToAppear, " +
-          "current figure: $_currentFigure, " +
-          "gas jets pattern: $_gasJetsPattern, " +
-          "current gas jet: ${_gasJetsPattern[_currentGasJetIndex]} ($_currentGasJetIndex), " +
-          "map:\n$_map,}";
-}
-
-class Map {
-  static const _DEFAULT_GAP = 3;
-
-  final List<List<Cell>> _data = List.empty(growable: true);
-
-  List<List<Cell>> get map => _data;
-
-  void appear(Figure figure) {
-    for (int i = 0; i < _DEFAULT_GAP; ++i) {
-      _data.insert(0, List.filled(CHAMBER_WIDTH, Cell.empty));
-    }
-
-    figure.toAppearPart().reversed.forEach((row) { _data.insert(0, row); });
-  }
-
-  @override
-  String toString() =>
-      _data
-          .map((row) => row.map((cell) => cell.toVisualization()))
-          .map((row) => "|${row.join()}|")
-          .join("\n") + "\n+${List.filled(CHAMBER_WIDTH, "-").join()}+";
-}
-
-enum Cell {
-  empty, stoppedRock, fallingRock;
-
-  String toVisualization() {
-    switch (this) {
-      case Cell.empty: return ".";
-      case Cell.stoppedRock: return "#";
-      case Cell.fallingRock: return "@";
-    }
-  }
-}
-
-enum Figure {
-  horizontalLine, cross, reverseLShape, verticalLine, qube;
-
-  static const _START_OFFSET = 2;
-
-  int get height {
-    switch (this) {
-      case Figure.horizontalLine: return 1;
-      case Figure.cross: return 3;
-      case Figure.reverseLShape: return 3;
-      case Figure.verticalLine: return 4;
-      case Figure.qube: return 2;
-    }
-  }
-
-  Figure next() {
-    switch (this) {
-      case Figure.horizontalLine: return Figure.cross;
-      case Figure.cross: return Figure.reverseLShape;
-      case Figure.reverseLShape: return Figure.verticalLine;
-      case Figure.verticalLine: return Figure.qube;
-      case Figure.qube: return Figure.horizontalLine;
-    }
-  }
-
-  List<List<Cell>> toAppearPart() {
-    final result =
-        List.generate(height, (i) => List.filled(CHAMBER_WIDTH, Cell.empty));
-    switch (this) {
-      case Figure.horizontalLine:
-        for (int i = 0; i < 4; ++i) {
-          result[0][_START_OFFSET + i] = Cell.fallingRock;
-        }
-        break;
-      case Figure.cross:
-        result[0][_START_OFFSET + 1] = Cell.fallingRock;
-        for (int i = 0; i < 3; ++i) {
-          result[1][_START_OFFSET + i] = Cell.fallingRock;
-        }
-        result[2][_START_OFFSET + 1] = Cell.fallingRock;
-        break;
-      case Figure.reverseLShape:
-        for (int i = 0; i < 2; ++i) {
-          result[i][_START_OFFSET + 2] = Cell.fallingRock;
-        }
-        for (int i = 0; i < 3; ++i) {
-          result[2][_START_OFFSET + i] = Cell.fallingRock;
-        }
-        break;
-      case Figure.verticalLine:
-        for (int i = 0; i < result.length; ++i) {
-          result[i][_START_OFFSET] = Cell.fallingRock;
-        }
-        break;
-      case Figure.qube:
-        for (int i = 0; i < result.length; ++i) {
-          for (int j = 0; j < result.length; ++j) {
-            result[i][_START_OFFSET + j] = Cell.fallingRock;
-          }
-        }
-        break;
-    }
+  int get visibleSidesCount {
+    int n = (visibleSidesBitMap >> 1) & 0x1B;
+    int result = visibleSidesBitMap - n;
+    n = (n >> 1) & 0x1B;
+    result -= n;
+    result = (result + (result >> 3)) & 7;
     return result;
   }
 
-  String toVisualization() {
-    List<List<Cell>> appearPart = toAppearPart();
-    return appearPart
-        .map((row) => row.map((cell) => cell.toVisualization()).join())
-        .join("\n");
+  Qube(this.coordinate);
+
+  bool isSideVisible(Side side) => visibleSidesBitMap & side.bit != 0;
+
+  void markSideHidden(Side side) {
+    visibleSidesBitMap &= ~side.bit;
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is Qube &&
+          runtimeType == other.runtimeType &&
+          coordinate == other.coordinate;
+
+  @override
+  int get hashCode => coordinate.hashCode;
+
+  @override
+  String toString() =>
+      "Qube{coordinate: $coordinate, sidesVisible: ${visibleSidesBitMap.toRadixString(16)}}";
+}
+
+class Coordinate {
+  final int x;
+  final int y;
+  final int z;
+
+  Coordinate(this.x, this.y, this.z);
+
+  factory Coordinate.fromInputLine(String inputLine) {
+    final numbers = inputLine.split(",").map((i) => int.parse(i)).toList();
+    return Coordinate(numbers[0], numbers[1], numbers[2]);
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is Coordinate &&
+          runtimeType == other.runtimeType &&
+          x == other.x &&
+          y == other.y &&
+          z == other.z;
+
+  @override
+  int get hashCode => x.hashCode ^ y.hashCode ^ z.hashCode;
+
+  @override
+  String toString() => "Coordinate{x: $x, y: $y, z: $z}";
+}
+
+class Pair<F, S> {
+  final F first;
+  final S second;
+
+  Pair(F this.first, S this.second);
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+          other is Pair &&
+              runtimeType == other.runtimeType &&
+              first == other.first &&
+              second == other.second;
+
+  @override
+  int get hashCode => first.hashCode ^ second.hashCode;
+
+  @override
+  String toString() => 'Pair{first: $first, second: $second}';
+}
+
+class SparseIntArray<T> {
+  final _data = RedBlackTree<int, T>();
+
+  void add(int index, T value) => _data.insert(index, value);
+
+  bool containsIndex(int index) => _data.lookup(index) != null;
+
+  T? operator [](int index) => _data.lookupValue(index);
+
+  void operator []=(int index, T value) => _data.insert(index, value);
+
+  Iterable<int> get indexes => _data.keys;
+
+  bool get isEmpty => _data.keys.isEmpty;
+}
+
+void printQubeBySurfaces(
+    SparseIntArray<SparseIntArray<SparseIntArray<Qube>>> bitOfLava) {
+  int minX = 1 << 32 - 1, maxX = -1, minY = 1 << 32 - 1, maxY = -1;
+  for (final int z in bitOfLava.indexes) {
+    final zSurface = bitOfLava[z];
+    if (zSurface == null || zSurface.isEmpty)
+      continue;
+
+    for (final int x in zSurface.indexes) {
+      final yLine = zSurface[x];
+      if (yLine == null || yLine.isEmpty)
+        continue;
+
+      if (x < minX) {
+        minX = x;
+      }
+      if (x > maxX) {
+        maxX = x;
+      }
+
+      int n = yLine.indexes.min;
+      if (n < minY) {
+        minY = n;
+      }
+      n = yLine.indexes.max;
+      if (n > maxY) {
+        maxY = n;
+      }
+    }
+  }
+
+  final zs = bitOfLava.indexes.sorted((a, b) => a.compareTo(b));
+  for (final int z in zs) {
+    print("z = $z:");
+
+    final zSurface = bitOfLava[z];
+    if (zSurface == null || zSurface.isEmpty) {
+      print("empty!\n");
+      continue;
+    }
+
+    final square = List.generate(maxY - minY + 1,
+            (index) => List.generate(maxX - minX + 1, (index) => "."));
+
+    for (final int x in zSurface.indexes) {
+      final yLine = zSurface[x];
+      if (yLine == null || yLine.isEmpty)
+        continue;
+
+      for (final int y in yLine.indexes) {
+        square[y - minY][x - minX] = "#";
+      }
+    }
+
+    print(square.map((row) => row.join()).join("\n"));
+    print("");
   }
 }
